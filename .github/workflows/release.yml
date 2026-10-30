@@ -1,0 +1,148 @@
+name: Build and Release APK
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+# 連続プッシュ時に同じバージョン番号が競合しないよう順番に実行する
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Calculate next version
+        id: version
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+
+          # Infiniroll.csproj の <ApplicationDisplayVersion> からメジャー番号を読み取る（例: 1.0 -> MAJOR=1）
+          CSPROJ_VER=$(sed -n 's/.*<ApplicationDisplayVersion>\([^<]*\)<\/ApplicationDisplayVersion>.*/\1/p' Infiniroll.csproj | tr -d '[:space:]')
+          MAJOR=$(echo "$CSPROJ_VER" | cut -d. -f1)
+          DEFAULT_MINOR=$(echo "$CSPROJ_VER" | cut -d. -f2)
+          MAJOR=${MAJOR:-1}
+          DEFAULT_MINOR=${DEFAULT_MINOR:-0}
+
+          # GitHub上の既存タグ (v<MAJOR>.*) から最大のマイナー番号を取得
+          LATEST_MINOR=$(git tag -l "v${MAJOR}.*" | sed -n "s/^v${MAJOR}\.\([0-9][0-9]*\)$/\1/p" | sort -n | tail -n 1)
+
+          if [ -z "$LATEST_MINOR" ]; then
+            NEXT_MINOR="$DEFAULT_MINOR"
+          else
+            NEXT_MINOR=$((LATEST_MINOR + 1))
+          fi
+
+          DISPLAY_VERSION="${MAJOR}.${NEXT_MINOR}"
+          TAG_NAME="v${DISPLAY_VERSION}"
+          # Android上書き更新用の整数 versionCode (例: 1.0 -> 10000, 1.1 -> 10001, 2.0 -> 20000)
+          VERSION_CODE=$((MAJOR * 10000 + NEXT_MINOR))
+
+          echo "display_version=${DISPLAY_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
+          echo "version_code=${VERSION_CODE}" >> "$GITHUB_OUTPUT"
+
+          echo "Resolved release version: ${TAG_NAME} (versionCode=${VERSION_CODE})"
+
+      - name: Validate signing secrets
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ] || [ -z "$ANDROID_KEYSTORE_PASSWORD" ]; then
+            echo "::error::GitHub Secrets (ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD) が未設定です。"
+            exit 1
+          fi
+
+      - name: Setup JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'microsoft'
+          java-version: '21'
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install .NET Android workload
+        run: dotnet workload install android
+
+      - name: Install Android SDK dependencies
+        run: |
+          dotnet build Infiniroll.csproj \
+            -t:InstallAndroidDependencies \
+            -c Release \
+            -p:AndroidSdkDirectory="$ANDROID_HOME" \
+            -p:AcceptAndroidSDKLicenses=true
+
+      - name: Decode Keystore and Publish Signed APK
+        id: build
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          DISPLAY_VERSION: ${{ steps.version.outputs.display_version }}
+          TAG_NAME: ${{ steps.version.outputs.tag_name }}
+          VERSION_CODE: ${{ steps.version.outputs.version_code }}
+        run: |
+          set -euo pipefail
+
+          KEYSTORE_FILE="$RUNNER_TEMP/infiniroll-release.keystore"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | tr -d '[:space:]' | base64 -d > "$KEYSTORE_FILE"
+
+          KEY_ALIAS="${ANDROID_KEY_ALIAS:-infiniroll}"
+          # MSBuild プロパティ渡し時の特殊文字（% や ;）をエスケープ
+          ESCAPED_PASS="${ANDROID_KEYSTORE_PASSWORD//%/%25}"
+          ESCAPED_PASS="${ESCAPED_PASS//;/%3B}"
+
+          dotnet publish Infiniroll.csproj \
+            -c Release \
+            -p:AndroidSdkDirectory="$ANDROID_HOME" \
+            -p:AndroidPackageFormat=apk \
+            -p:ApplicationVersion="$VERSION_CODE" \
+            -p:ApplicationDisplayVersion="$DISPLAY_VERSION" \
+            -p:AndroidKeyStore=true \
+            -p:AndroidSigningKeyStore="$KEYSTORE_FILE" \
+            -p:AndroidSigningKeyAlias="$KEY_ALIAS" \
+            -p:AndroidSigningStorePass="$ESCAPED_PASS" \
+            -p:AndroidSigningKeyPass="$ESCAPED_PASS"
+
+          SIGNED_APK="bin/Release/net10.0-android/publish/io.github.jun8k2003.infiniroll-Signed.apk"
+          if [ ! -f "$SIGNED_APK" ]; then
+            echo "::error::署名済みAPKが見つかりません: $SIGNED_APK"
+            exit 1
+          fi
+
+          mkdir -p release-assets
+          RELEASE_APK="release-assets/Infiniroll-${TAG_NAME}.apk"
+          cp "$SIGNED_APK" "$RELEASE_APK"
+          echo "apk_path=${RELEASE_APK}" >> "$GITHUB_OUTPUT"
+
+      - name: Cleanup temporary keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/infiniroll-release.keystore"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ steps.version.outputs.tag_name }}
+          APK_PATH: ${{ steps.build.outputs.apk_path }}
+        run: |
+          gh release create "$TAG_NAME" "$APK_PATH" \
+            --target "${{ github.sha }}" \
+            --title "Infiniroll ${TAG_NAME}" \
+            --generate-notes
