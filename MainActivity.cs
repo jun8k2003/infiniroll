@@ -23,6 +23,7 @@ public class MainActivity : Activity
     // Scroll Mode
     private RadioButton? _radioScrollSmooth;
     private RadioButton? _radioScrollLogical;
+    private RadioButton? _radioScrollButtons;
     private TextView? _textSmoothDistanceLabel;
     private SeekBar? _seekSmoothDistance;
 
@@ -38,7 +39,9 @@ public class MainActivity : Activity
     private SeekBar? _seekWheelSize;
     private Switch? _switchHaptic;
     private Switch? _switchShowBackButton;
-    private Button? _btnReset;
+    private Switch? _switchShowSettingsButton;
+    private Button? _btnResetPosition;
+    private Button? _btnResetDefaults;
 
     protected override void OnCreate(Bundle? savedInstanceState)
     {
@@ -73,6 +76,7 @@ public class MainActivity : Activity
 
         _radioScrollSmooth = FindViewById<RadioButton>(Resource.Id.radio_scroll_smooth);
         _radioScrollLogical = FindViewById<RadioButton>(Resource.Id.radio_scroll_logical);
+        _radioScrollButtons = FindViewById<RadioButton>(Resource.Id.radio_scroll_buttons);
         _textSmoothDistanceLabel = FindViewById<TextView>(Resource.Id.text_smooth_distance_label);
         _seekSmoothDistance = FindViewById<SeekBar>(Resource.Id.seekbar_smooth_distance);
 
@@ -87,7 +91,9 @@ public class MainActivity : Activity
         _seekWheelSize = FindViewById<SeekBar>(Resource.Id.seekbar_wheel_size);
         _switchHaptic = FindViewById<Switch>(Resource.Id.switch_haptic);
         _switchShowBackButton = FindViewById<Switch>(Resource.Id.switch_show_back_button);
-        _btnReset = FindViewById<Button>(Resource.Id.btn_reset_position);
+        _switchShowSettingsButton = FindViewById<Switch>(Resource.Id.switch_show_settings_button);
+        _btnResetPosition = FindViewById<Button>(Resource.Id.btn_reset_position);
+        _btnResetDefaults = FindViewById<Button>(Resource.Id.btn_reset_defaults);
     }
 
     private void SetupListeners()
@@ -120,6 +126,17 @@ public class MainActivity : Activity
                 if (e.IsChecked)
                 {
                     _settings.ScrollMode = ScrollModeType.Logical;
+                }
+            };
+        }
+
+        if (_radioScrollButtons != null && _settings != null)
+        {
+            _radioScrollButtons.CheckedChange += (s, e) =>
+            {
+                if (e.IsChecked)
+                {
+                    _settings.ScrollMode = ScrollModeType.LogicalButtons;
                 }
             };
         }
@@ -203,13 +220,42 @@ public class MainActivity : Activity
             };
         }
 
-        if (_btnReset != null && _settings != null)
+        if (_switchShowSettingsButton != null && _settings != null)
         {
-            _btnReset.Click += (s, e) =>
+            _switchShowSettingsButton.CheckedChange += (s, e) =>
+            {
+                _settings.ShowSettingsButtonEnabled = e.IsChecked;
+            };
+        }
+
+        if (_btnResetPosition != null && _settings != null)
+        {
+            _btnResetPosition.Click += (s, e) =>
             {
                 _settings.ResetPositionAndSize();
                 LoadSettingsToUi();
                 Toast.MakeText(this, Resource.String.reset_success_msg, ToastLength.Short)?.Show();
+            };
+        }
+
+        if (_btnResetDefaults != null && _settings != null)
+        {
+            _btnResetDefaults.Click += (s, e) =>
+            {
+                var builder = new AlertDialog.Builder(this);
+                builder.SetTitle(Resource.String.reset_defaults_confirm_title);
+                builder.SetMessage(Resource.String.reset_defaults_confirm_msg);
+                builder.SetPositiveButton(Resource.String.dialog_reset, (dialog, which) =>
+                {
+                    if (_settings != null)
+                    {
+                        _settings.ResetAllSettingsToDefault();
+                        LoadSettingsToUi();
+                        Toast.MakeText(this, Resource.String.reset_defaults_success_msg, ToastLength.Short)?.Show();
+                    }
+                });
+                builder.SetNegativeButton(Resource.String.dialog_cancel, (IDialogInterfaceOnClickListener?)null);
+                builder.Create()?.Show();
             };
         }
     }
@@ -218,15 +264,19 @@ public class MainActivity : Activity
     {
         if (_settings == null) return;
 
-        if (_radioScrollSmooth != null && _radioScrollLogical != null)
+        if (_radioScrollSmooth != null && _radioScrollLogical != null && _radioScrollButtons != null)
         {
-            if (_settings.ScrollMode == ScrollModeType.Smooth)
+            switch (_settings.ScrollMode)
             {
-                _radioScrollSmooth.Checked = true;
-            }
-            else
-            {
-                _radioScrollLogical.Checked = true;
+                case ScrollModeType.Smooth:
+                    _radioScrollSmooth.Checked = true;
+                    break;
+                case ScrollModeType.Logical:
+                    _radioScrollLogical.Checked = true;
+                    break;
+                case ScrollModeType.LogicalButtons:
+                    _radioScrollButtons.Checked = true;
+                    break;
             }
         }
 
@@ -278,6 +328,11 @@ public class MainActivity : Activity
         if (_switchShowBackButton != null)
         {
             _switchShowBackButton.Checked = _settings.ShowBackButtonEnabled;
+        }
+
+        if (_switchShowSettingsButton != null)
+        {
+            _switchShowSettingsButton.Checked = _settings.ShowSettingsButtonEnabled;
         }
     }
 

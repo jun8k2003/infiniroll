@@ -383,16 +383,19 @@ public class WheelOverlayService : AccessibilityService
 
         int sizePx = (int)(_settings.WheelSizeDp * _density);
         int extraLeftPx = GetExpectedExtraLeftPx();
-        int totalWidthPx = sizePx + extraLeftPx;
+        int extraRightPx = GetExpectedExtraRightPx();
+        int totalWidthPx = sizePx + extraLeftPx + extraRightPx;
         int tabHeightPx = (int)(24f * _density);
         int totalHeightPx = sizePx + tabHeightPx;
 
         bool sizeChanged = _layoutParams.Width != totalWidthPx ||
                            _layoutParams.Height != totalHeightPx ||
-                           _appliedExtraLeftPx != extraLeftPx;
+                           _appliedExtraLeftPx != extraLeftPx ||
+                           _appliedExtraRightPx != extraRightPx;
         if (sizeChanged)
         {
             _appliedExtraLeftPx = extraLeftPx;
+            _appliedExtraRightPx = extraRightPx;
             _layoutParams.Width = totalWidthPx;
             _layoutParams.Height = totalHeightPx;
         }
@@ -567,11 +570,19 @@ public class WheelOverlayService : AccessibilityService
     private float _resizeAnchorCenterX;
     private float _resizeAnchorCenterY;
     private int _appliedExtraLeftPx;
+    private int _appliedExtraRightPx;
 
     private int GetExpectedExtraLeftPx()
     {
         return (_settings?.ShowBackButtonEnabled == true)
             ? (int)MathF.Ceiling(WheelOverlayView.BackButtonExtraLeftDp * _density)
+            : 0;
+    }
+
+    private int GetExpectedExtraRightPx()
+    {
+        return (_settings?.ShowSettingsButtonEnabled == true)
+            ? (int)MathF.Ceiling(WheelOverlayView.SettingsButtonExtraRightDp * _density)
             : 0;
     }
 
@@ -590,6 +601,7 @@ public class WheelOverlayService : AccessibilityService
         _overlayView.ResizeStarted += OnWheelResizeStarted;
         _overlayView.ResizeRequested += OnWheelResizeRequested;
         _overlayView.BackRequested += OnWheelBackRequested;
+        _overlayView.SettingsRequested += OnWheelSettingsRequested;
         _overlayView.ScrollStarted += OnWheelScrollStarted;
         _overlayView.WheelMotionDetected += OnWheelMotionDetected;
         _overlayView.ScrollRequested += OnWheelScrollRequested;
@@ -597,7 +609,8 @@ public class WheelOverlayService : AccessibilityService
 
         int sizePx = (int)(_settings.WheelSizeDp * _density);
         _appliedExtraLeftPx = GetExpectedExtraLeftPx();
-        int totalWidthPx = sizePx + _appliedExtraLeftPx;
+        _appliedExtraRightPx = GetExpectedExtraRightPx();
+        int totalWidthPx = sizePx + _appliedExtraLeftPx + _appliedExtraRightPx;
         int tabHeightPx = (int)(24f * _density);
         int totalHeightPx = sizePx + tabHeightPx;
 
@@ -666,6 +679,7 @@ public class WheelOverlayService : AccessibilityService
                 _overlayView.ResizeStarted -= OnWheelResizeStarted;
                 _overlayView.ResizeRequested -= OnWheelResizeRequested;
                 _overlayView.BackRequested -= OnWheelBackRequested;
+                _overlayView.SettingsRequested -= OnWheelSettingsRequested;
                 _overlayView.ScrollStarted -= OnWheelScrollStarted;
                 _overlayView.WheelMotionDetected -= OnWheelMotionDetected;
                 _overlayView.ScrollRequested -= OnWheelScrollRequested;
@@ -726,13 +740,27 @@ public class WheelOverlayService : AccessibilityService
         }
     }
 
+    private void OnWheelSettingsRequested()
+    {
+        try
+        {
+            var intent = new Intent(this, typeof(MainActivity));
+            intent.AddFlags(ActivityFlags.NewTask | ActivityFlags.SingleTop | ActivityFlags.ReorderToFront);
+            StartActivity(intent);
+        }
+        catch (Exception ex)
+        {
+            Log.Warn("Infiniroll", $"Launch settings activity failed: {ex.Message}");
+        }
+    }
+
     private void OnWheelResizeStarted()
     {
         if (_layoutParams == null) return;
         CancelPullInAnimation();
         UpdateDisplayMetrics();
         int tabHeightPx = (int)(24f * _density);
-        int currentWheelSizePx = Math.Max(1, _layoutParams.Width - _appliedExtraLeftPx);
+        int currentWheelSizePx = Math.Max(1, _layoutParams.Width - _appliedExtraLeftPx - _appliedExtraRightPx);
         // ホイールの中心座標（スクリーン絶対座標）をアンカーとして記録
         _resizeAnchorCenterX = _layoutParams.X + _appliedExtraLeftPx + (currentWheelSizePx / 2f);
         _resizeAnchorCenterY = _layoutParams.Y + tabHeightPx + (currentWheelSizePx / 2f);
@@ -749,12 +777,13 @@ public class WheelOverlayService : AccessibilityService
         int tabHeightPx = (int)(24f * _density);
         int newSizePx = (int)(newSizeDp * _density);
         int expectedExtraLeftPx = GetExpectedExtraLeftPx();
-        int newTotalWidthPx = newSizePx + expectedExtraLeftPx;
+        int expectedExtraRightPx = GetExpectedExtraRightPx();
+        int newTotalWidthPx = newSizePx + expectedExtraLeftPx + expectedExtraRightPx;
 
         // 中心アンカーが未初期化の場合（設定画面からの変更など）は現在の中心を基準にする
         if (_resizeAnchorCenterX == 0 && _resizeAnchorCenterY == 0)
         {
-            int currentWheelSizePx = Math.Max(1, _layoutParams.Width - _appliedExtraLeftPx);
+            int currentWheelSizePx = Math.Max(1, _layoutParams.Width - _appliedExtraLeftPx - _appliedExtraRightPx);
             _resizeAnchorCenterX = _layoutParams.X + _appliedExtraLeftPx + (currentWheelSizePx / 2f);
             _resizeAnchorCenterY = _layoutParams.Y + tabHeightPx + (currentWheelSizePx / 2f);
         }
@@ -784,11 +813,13 @@ public class WheelOverlayService : AccessibilityService
 
         int sizePx = (int)(_settings.WheelSizeDp * _density);
         int extraLeftPx = GetExpectedExtraLeftPx();
-        int totalWidthPx = sizePx + extraLeftPx;
+        int extraRightPx = GetExpectedExtraRightPx();
+        int totalWidthPx = sizePx + extraLeftPx + extraRightPx;
         int tabHeightPx = (int)(24f * _density);
         int totalHeightPx = sizePx + tabHeightPx;
 
         _appliedExtraLeftPx = extraLeftPx;
+        _appliedExtraRightPx = extraRightPx;
         _layoutParams.Width = totalWidthPx;
         _layoutParams.Height = totalHeightPx;
         _layoutParams.X = _settings.WheelPosX;
@@ -808,7 +839,8 @@ public class WheelOverlayService : AccessibilityService
 
         int sizePx = (int)(AppSettings.DefaultWheelSizeDp * _density);
         int extraLeftPx = GetExpectedExtraLeftPx();
-        int totalWidthPx = sizePx + extraLeftPx;
+        int extraRightPx = GetExpectedExtraRightPx();
+        int totalWidthPx = sizePx + extraLeftPx + extraRightPx;
         int tabHeightPx = (int)(24f * _density);
         int totalHeightPx = sizePx + tabHeightPx;
 
@@ -819,6 +851,7 @@ public class WheelOverlayService : AccessibilityService
         _settings.WheelPosY = posY;
 
         _appliedExtraLeftPx = extraLeftPx;
+        _appliedExtraRightPx = extraRightPx;
         _layoutParams.Width = totalWidthPx;
         _layoutParams.Height = totalHeightPx;
         _layoutParams.X = posX;
@@ -859,13 +892,16 @@ public class WheelOverlayService : AccessibilityService
             UpdateDisplayMetrics();
             int expectedWheelSizePx = (int)(_settings.WheelSizeDp * _density);
             int expectedExtraLeftPx = GetExpectedExtraLeftPx();
-            int expectedTotalWidthPx = expectedWheelSizePx + expectedExtraLeftPx;
+            int expectedExtraRightPx = GetExpectedExtraRightPx();
+            int expectedTotalWidthPx = expectedWheelSizePx + expectedExtraLeftPx + expectedExtraRightPx;
 
-            if (_layoutParams.Width != expectedTotalWidthPx || _appliedExtraLeftPx != expectedExtraLeftPx)
+            if (_layoutParams.Width != expectedTotalWidthPx ||
+                _appliedExtraLeftPx != expectedExtraLeftPx ||
+                _appliedExtraRightPx != expectedExtraRightPx)
             {
                 CancelPullInAnimation();
                 int tabHeightPx = (int)(24f * _density);
-                int oldWheelSizePx = Math.Max(1, _layoutParams.Width - _appliedExtraLeftPx);
+                int oldWheelSizePx = Math.Max(1, _layoutParams.Width - _appliedExtraLeftPx - _appliedExtraRightPx);
                 float currentCenterX = _layoutParams.X + _appliedExtraLeftPx + (oldWheelSizePx / 2f);
                 float currentCenterY = _layoutParams.Y + tabHeightPx + (oldWheelSizePx / 2f);
 
@@ -882,6 +918,8 @@ public class WheelOverlayService : AccessibilityService
 
                 _settings.WheelPosX = newX;
                 _settings.WheelPosY = newY;
+                _appliedExtraLeftPx = expectedExtraLeftPx;
+                _appliedExtraRightPx = expectedExtraRightPx;
                 ApplyCurrentSizeAndPosition();
             }
         }

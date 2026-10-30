@@ -6,8 +6,9 @@ namespace Infiniroll;
 
 public enum ScrollModeType
 {
-    Smooth = 0,   // 超スムーズ（微小ジェスチャー・ピクセル追従）
-    Logical = 1   // 論理スクロール（ページ単位・完全誤タップ防止）
+    Smooth = 0,         // 超スムーズ（微小ジェスチャー・ピクセル追従）
+    Logical = 1,        // 論理スクロール（ホイール回転・完全誤タップ防止）
+    LogicalButtons = 2  // ボタン方式（▲/▼ボタン長押し・論理スクロール）
 }
 
 public class AppSettings
@@ -21,6 +22,7 @@ public class AppSettings
     private const string KeyNotchAngle = "pref_notch_angle";
     private const string KeyHaptic = "pref_haptic";
     private const string KeyShowBackButton = "pref_show_back_button";
+    private const string KeyShowSettingsButton = "pref_show_settings_button";
     private const string KeyWheelSize = "pref_wheel_size";
     private const string KeyWheelPosX = "pref_wheel_pos_x";
     private const string KeyWheelPosY = "pref_wheel_pos_y";
@@ -138,6 +140,17 @@ public class AppSettings
         }
     }
 
+    public bool ShowSettingsButtonEnabled
+    {
+        get => _prefs.GetBoolean(KeyShowSettingsButton, false);
+        set
+        {
+            using var editor = _prefs.Edit();
+            editor?.PutBoolean(KeyShowSettingsButton, value)?.Apply();
+            NotifyChanged();
+        }
+    }
+
     public int WheelSizeDp
     {
         get => _prefs.GetInt(KeyWheelSize, DefaultWheelSizeDp);
@@ -179,11 +192,20 @@ public class AppSettings
             editor?.Remove(KeyWheelPosX)?
                    .Remove(KeyWheelPosY)?
                    .PutInt(KeyWheelSize, DefaultWheelSizeDp)?
-                   .PutInt(KeySmoothDistance, DefaultSmoothDistanceDp)?
-                   .PutFloat(KeyNotchAngle, DefaultNotchAngle)?
                    .Apply();
         }
         
+        PositionResetRequested?.Invoke();
+        NotifyChanged();
+    }
+
+    public void ResetAllSettingsToDefault()
+    {
+        using (var editor = _prefs.Edit())
+        {
+            editor?.Clear()?.Apply();
+        }
+
         PositionResetRequested?.Invoke();
         NotifyChanged();
     }

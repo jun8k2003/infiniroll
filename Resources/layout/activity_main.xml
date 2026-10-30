@@ -119,6 +119,15 @@
                     android:text="論理スクロール方式\nページ単位・広告誤タップ100%防止"
                     android:textColor="@color/text_primary"
                     android:textSize="14sp" />
+
+                <RadioButton
+                    android:id="@+id/radio_scroll_buttons"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/radio_scroll_buttons"
+                    android:textColor="@color/text_primary"
+                    android:textSize="14sp" />
             </RadioGroup>
 
             <!-- Smooth Scroll Distance Slider -->
@@ -259,17 +268,43 @@
                 android:text="@string/pref_show_back_button"
                 android:textColor="@color/text_primary"
                 android:textSize="15sp" />
+
+            <!-- App Settings Launch Button (2 o'clock) Switch -->
+            <Switch
+                android:id="@+id/switch_show_settings_button"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:checked="false"
+                android:text="@string/pref_show_settings_button"
+                android:textColor="@color/text_primary"
+                android:textSize="15sp" />
         </LinearLayout>
 
-        <!-- Reset Button -->
-        <Button
-            android:id="@+id/btn_reset_position"
+        <!-- Reset Buttons -->
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
-            android:backgroundTint="#424242"
-            android:text="@string/btn_reset_position"
-            android:textColor="#FFFFFF" />
+            android:orientation="vertical">
+
+            <Button
+                android:id="@+id/btn_reset_position"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:backgroundTint="#424242"
+                android:text="@string/btn_reset_position"
+                android:textColor="#FFFFFF" />
+
+            <Button
+                android:id="@+id/btn_reset_defaults"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:backgroundTint="#374151"
+                android:text="@string/btn_reset_defaults"
+                android:textColor="#FFFFFF" />
+        </LinearLayout>
 
         <!-- Guide Card -->
         <LinearLayout
