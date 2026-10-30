@@ -1,9 +1,8 @@
 <div align="center">
 
-<img src="docs/images/illust_hero_banner.jpg" alt="Infiniroll - 無限スクロールジョグダイヤル" width="720" />
-
 # Infiniroll
 ### 無限スクロールジョグダイヤル
+<img src="docs/images/illust_hero_banner.jpg" alt="Infiniroll - 無限スクロールジョグダイヤル" width="720" />
 
 *くるくる回すだけ。誤タップゼロでどこまでも読める、フローティング・スクロールコントローラー*
 
@@ -25,6 +24,8 @@
 | 🫧 待機時は半透明ですっきり（初期値 25%） | 🎛️ 触れた瞬間に表示＆戻るボタンにも対応 |
 | :---: | :---: |
 | <img src="docs/images/10_wheel_active.png" alt="Infiniroll 稼働画面（無操作時の半透明状態）" width="240" /> | <img src="docs/images/11_wheel_back_button.png" alt="Infiniroll 操作時＆戻るボタン表示状態" width="240" /> |
+
+![demo](./docs/images/infiniroll_demo.gif)
 
 ---
 
