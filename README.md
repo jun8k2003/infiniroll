@@ -1,9 +1,9 @@
 <div align="center">
 
-<img src="docs/images/illust_hero_banner.jpg" alt="Infiniroll - 無限スクロールジョグダイヤル" width="720" />
-
 # Infiniroll
 ### 無限スクロールジョグダイヤル
+
+<img src="docs/images/illust_hero_banner.jpg" alt="Infiniroll - 無限スクロールジョグダイヤル" width="720" />
 
 *くるくる回すだけ。誤タップゼロでどこまでも読める、フローティング・スクロールコントローラー*
 
