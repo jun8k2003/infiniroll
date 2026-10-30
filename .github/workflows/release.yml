@@ -4,6 +4,12 @@ on:
   push:
     branches:
       - main
+    paths-ignore:
+      - 'README.md'
+      - 'SPEC.md'
+      - 'SPEC_HISTORY.md'
+      - 'docs/**'
+      - '.github/workflows/**'
   workflow_dispatch:
 
 # 連続プッシュ時に同じバージョン番号が競合しないよう順番に実行する
