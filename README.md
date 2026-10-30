@@ -4,6 +4,8 @@
 ### 無限スクロールジョグダイヤル
 <img src="docs/images/illust_hero_banner.jpg" alt="Infiniroll - 無限スクロールジョグダイヤル" width="720" />
 
+<img src="docs/images/illust_hero_banner.jpg" alt="Infiniroll - 無限スクロールジョグダイヤル" width="720" />
+
 *くるくる回すだけ。誤タップゼロでどこまでも読める、フローティング・スクロールコントローラー*
 
 [![Download Latest APK](https://img.shields.io/badge/Download-Latest%20APK-38BDF8?style=for-the-badge&logo=android&logoColor=white)](../../releases/latest)
