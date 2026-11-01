@@ -88,6 +88,8 @@ public class WheelOverlayView : View
     private readonly Action _fadeOutRunnable;
     private readonly Handler _buttonRepeatHandler;
     private readonly Action _buttonRepeatAction;
+    private float _fadeProgress = 1.0f;
+    private ValueAnimator? _fadeAnimator;
     private bool _isFadedOut;
 
     // Callbacks
@@ -202,7 +204,7 @@ public class WheelOverlayView : View
         _laserDotGlowPaint = new Paint(PaintFlags.AntiAlias)
         {
             Color = Color.Rgb(255, 23, 68),
-            Alpha = 95
+            Alpha = 140
         };
         _laserDotGlowPaint.SetStyle(Paint.Style.Fill);
 
@@ -288,6 +290,11 @@ public class WheelOverlayView : View
     protected override void OnDraw(Canvas canvas)
     {
         base.OnDraw(canvas);
+        if (Width <= 0 || Height <= 0) return;
+
+        // ホイール本体はフェード進行度 (_fadeProgress) に応じた半透明レイヤーに描画
+        int alpha255 = Math.Clamp((int)Math.Round(_fadeProgress * 255f), 0, 255);
+        int layerId = canvas.SaveLayerAlpha(0f, 0f, Width, Height, alpha255);
 
         // 0. Draw optional 10 o'clock Back button ("◀") outside the outer circle
         if (_settings.ShowBackButtonEnabled)
@@ -339,7 +346,11 @@ public class WheelOverlayView : View
             canvas.DrawCircle(_centerX, _centerY, _innerRadius, _strokePaint);
         }
 
+        // ホイール本体のレイヤーを復元
+        canvas.RestoreToCount(layerId);
+
         // 5. Draw laser pointer red dot in center if enabled
+        // レイヤー復元後に描画するため、アプリ本体が半透明になっても赤ドットだけは100%不透明（鮮烈発光）を維持
         DrawCenterDot(canvas);
     }
 
@@ -800,8 +811,10 @@ public class WheelOverlayView : View
         CancelFadeOut();
         if (!_settings.AutoFadeEnabled)
         {
-            Alpha = 1.0f;
+            _fadeAnimator?.Cancel();
+            _fadeProgress = 1.0f;
             _isFadedOut = false;
+            Invalidate();
             return;
         }
 
@@ -820,12 +833,14 @@ public class WheelOverlayView : View
         if (!_settings.AutoFadeEnabled)
         {
             CancelFadeOut();
-            Alpha = 1.0f;
+            _fadeAnimator?.Cancel();
+            _fadeProgress = 1.0f;
             _isFadedOut = false;
         }
         else if (_isFadedOut)
         {
-            Alpha = _settings.FadeAlpha;
+            _fadeAnimator?.Cancel();
+            _fadeProgress = _settings.FadeAlpha;
         }
         else
         {
@@ -841,9 +856,25 @@ public class WheelOverlayView : View
 
     private void FadeInImmediately()
     {
-        if (_isFadedOut || Alpha < 0.99f)
+        if (_isFadedOut || _fadeProgress < 0.99f)
         {
-            Animate()?.Alpha(1.0f)?.SetDuration(150)?.Start();
+            _fadeAnimator?.Cancel();
+            float startVal = _fadeProgress;
+            var anim = ValueAnimator.OfFloat(startVal, 1.0f);
+            if (anim != null)
+            {
+                anim.SetDuration(150);
+                anim.Update += (s, e) =>
+                {
+                    if (e.Animation?.AnimatedValue is Java.Lang.Number num)
+                    {
+                        _fadeProgress = num.FloatValue();
+                    }
+                    Invalidate();
+                };
+                _fadeAnimator = anim;
+                anim.Start();
+            }
             _isFadedOut = false;
         }
     }
@@ -853,7 +884,23 @@ public class WheelOverlayView : View
         if (!_settings.AutoFadeEnabled) return;
 
         float targetAlpha = _settings.FadeAlpha;
-        Animate()?.Alpha(targetAlpha)?.SetDuration(400)?.Start();
+        _fadeAnimator?.Cancel();
+        float startVal = _fadeProgress;
+        var anim = ValueAnimator.OfFloat(startVal, targetAlpha);
+        if (anim != null)
+        {
+            anim.SetDuration(400);
+            anim.Update += (s, e) =>
+            {
+                if (e.Animation?.AnimatedValue is Java.Lang.Number num)
+                {
+                    _fadeProgress = num.FloatValue();
+                }
+                Invalidate();
+            };
+            _fadeAnimator = anim;
+            anim.Start();
+        }
         _isFadedOut = true;
     }
 
@@ -892,6 +939,7 @@ public class WheelOverlayView : View
     {
         CancelButtonRepeat();
         CancelFadeOut();
+        _fadeAnimator?.Cancel();
         base.OnDetachedFromWindow();
     }
 }
