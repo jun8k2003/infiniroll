@@ -48,6 +48,9 @@ public class WheelOverlayView : View
     private readonly Paint _strokePaint;
     private readonly Paint _markerPaint;
     private readonly Paint _tabHandlePaint;
+    private readonly Paint _laserDotGlowPaint;
+    private readonly Paint _laserDotMainPaint;
+    private readonly Paint _laserDotCorePaint;
     private readonly Android.Graphics.Path _backIconPath;
     private readonly Android.Graphics.Path _arrowPath;
     private readonly RectF _upArcRect;
@@ -196,6 +199,27 @@ public class WheelOverlayView : View
         };
         _tabHandlePaint.SetStyle(Paint.Style.Stroke);
 
+        _laserDotGlowPaint = new Paint(PaintFlags.AntiAlias)
+        {
+            Color = Color.Rgb(255, 23, 68),
+            Alpha = 95
+        };
+        _laserDotGlowPaint.SetStyle(Paint.Style.Fill);
+
+        _laserDotMainPaint = new Paint(PaintFlags.AntiAlias)
+        {
+            Color = Color.Rgb(255, 0, 48),
+            Alpha = 255
+        };
+        _laserDotMainPaint.SetStyle(Paint.Style.Fill);
+
+        _laserDotCorePaint = new Paint(PaintFlags.AntiAlias)
+        {
+            Color = Color.Rgb(255, 240, 240),
+            Alpha = 230
+        };
+        _laserDotCorePaint.SetStyle(Paint.Style.Fill);
+
         SetWillNotDraw(false);
 
         // Schedule initial fade out if auto fade enabled
@@ -314,6 +338,25 @@ public class WheelOverlayView : View
             canvas.DrawCircle(_centerX, _centerY, _innerRadius, _innerButtonPaint);
             canvas.DrawCircle(_centerX, _centerY, _innerRadius, _strokePaint);
         }
+
+        // 5. Draw laser pointer red dot in center if enabled
+        DrawCenterDot(canvas);
+    }
+
+    private void DrawCenterDot(Canvas canvas)
+    {
+        if (!_settings.ShowCenterDotEnabled) return;
+
+        float glowRadius = 6.0f * _density;
+        float mainRadius = 3.0f * _density;
+        float coreRadius = 1.2f * _density;
+
+        // 1. レーザー光彩（外周グロー）
+        canvas.DrawCircle(_centerX, _centerY, glowRadius, _laserDotGlowPaint);
+        // 2. メインの赤ドット
+        canvas.DrawCircle(_centerX, _centerY, mainRadius, _laserDotMainPaint);
+        // 3. 中心の高輝度コア（ホットスポット）
+        canvas.DrawCircle(_centerX, _centerY, coreRadius, _laserDotCorePaint);
     }
 
     private void DrawLogicalButtons(Canvas canvas)

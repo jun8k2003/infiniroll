@@ -23,6 +23,7 @@ public class AppSettings
     private const string KeyHaptic = "pref_haptic";
     private const string KeyShowBackButton = "pref_show_back_button";
     private const string KeyShowSettingsButton = "pref_show_settings_button";
+    private const string KeyShowCenterDot = "pref_show_center_dot";
     private const string KeyWheelSize = "pref_wheel_size";
     private const string KeyWheelPosX = "pref_wheel_pos_x";
     private const string KeyWheelPosY = "pref_wheel_pos_y";
@@ -147,6 +148,17 @@ public class AppSettings
         {
             using var editor = _prefs.Edit();
             editor?.PutBoolean(KeyShowSettingsButton, value)?.Apply();
+            NotifyChanged();
+        }
+    }
+
+    public bool ShowCenterDotEnabled
+    {
+        get => _prefs.GetBoolean(KeyShowCenterDot, false);
+        set
+        {
+            using var editor = _prefs.Edit();
+            editor?.PutBoolean(KeyShowCenterDot, value)?.Apply();
             NotifyChanged();
         }
     }

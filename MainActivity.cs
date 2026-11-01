@@ -40,6 +40,7 @@ public class MainActivity : Activity
     private Switch? _switchHaptic;
     private Switch? _switchShowBackButton;
     private Switch? _switchShowSettingsButton;
+    private Switch? _switchShowCenterDot;
     private Button? _btnResetPosition;
     private Button? _btnResetDefaults;
 
@@ -92,6 +93,7 @@ public class MainActivity : Activity
         _switchHaptic = FindViewById<Switch>(Resource.Id.switch_haptic);
         _switchShowBackButton = FindViewById<Switch>(Resource.Id.switch_show_back_button);
         _switchShowSettingsButton = FindViewById<Switch>(Resource.Id.switch_show_settings_button);
+        _switchShowCenterDot = FindViewById<Switch>(Resource.Id.switch_show_center_dot);
         _btnResetPosition = FindViewById<Button>(Resource.Id.btn_reset_position);
         _btnResetDefaults = FindViewById<Button>(Resource.Id.btn_reset_defaults);
     }
@@ -228,6 +230,14 @@ public class MainActivity : Activity
             };
         }
 
+        if (_switchShowCenterDot != null && _settings != null)
+        {
+            _switchShowCenterDot.CheckedChange += (s, e) =>
+            {
+                _settings.ShowCenterDotEnabled = e.IsChecked;
+            };
+        }
+
         if (_btnResetPosition != null && _settings != null)
         {
             _btnResetPosition.Click += (s, e) =>
@@ -333,6 +343,11 @@ public class MainActivity : Activity
         if (_switchShowSettingsButton != null)
         {
             _switchShowSettingsButton.Checked = _settings.ShowSettingsButtonEnabled;
+        }
+
+        if (_switchShowCenterDot != null)
+        {
+            _switchShowCenterDot.Checked = _settings.ShowCenterDotEnabled;
         }
     }
 
