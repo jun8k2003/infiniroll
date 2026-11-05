@@ -41,6 +41,7 @@ public class MainActivity : Activity
     private Switch? _switchShowBackButton;
     private Switch? _switchShowSettingsButton;
     private Switch? _switchShowCenterDot;
+    private Switch? _switchLongPressCollapse;
     private Button? _btnResetPosition;
     private Button? _btnResetDefaults;
 
@@ -94,6 +95,7 @@ public class MainActivity : Activity
         _switchShowBackButton = FindViewById<Switch>(Resource.Id.switch_show_back_button);
         _switchShowSettingsButton = FindViewById<Switch>(Resource.Id.switch_show_settings_button);
         _switchShowCenterDot = FindViewById<Switch>(Resource.Id.switch_show_center_dot);
+        _switchLongPressCollapse = FindViewById<Switch>(Resource.Id.switch_long_press_collapse);
         _btnResetPosition = FindViewById<Button>(Resource.Id.btn_reset_position);
         _btnResetDefaults = FindViewById<Button>(Resource.Id.btn_reset_defaults);
     }
@@ -238,6 +240,14 @@ public class MainActivity : Activity
             };
         }
 
+        if (_switchLongPressCollapse != null && _settings != null)
+        {
+            _switchLongPressCollapse.CheckedChange += (s, e) =>
+            {
+                _settings.LongPressCollapseEnabled = e.IsChecked;
+            };
+        }
+
         if (_btnResetPosition != null && _settings != null)
         {
             _btnResetPosition.Click += (s, e) =>
@@ -348,6 +358,11 @@ public class MainActivity : Activity
         if (_switchShowCenterDot != null)
         {
             _switchShowCenterDot.Checked = _settings.ShowCenterDotEnabled;
+        }
+
+        if (_switchLongPressCollapse != null)
+        {
+            _switchLongPressCollapse.Checked = _settings.LongPressCollapseEnabled;
         }
     }
 

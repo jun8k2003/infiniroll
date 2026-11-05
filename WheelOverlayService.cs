@@ -381,6 +381,21 @@ public class WheelOverlayService : AccessibilityService
         UpdateDisplayMetrics();
         if (_screenWidth <= 0 || _screenHeight <= 0) return;
 
+        if (_overlayView.IsCollapsed)
+        {
+            int curW = _layoutParams.Width;
+            int curH = _layoutParams.Height;
+            int clampedX = Math.Clamp(_layoutParams.X, 0, Math.Max(0, _screenWidth - curW));
+            int clampedY = Math.Clamp(_layoutParams.Y, 0, Math.Max(0, _screenHeight - curH));
+            if (clampedX != _layoutParams.X || clampedY != _layoutParams.Y)
+            {
+                _layoutParams.X = clampedX;
+                _layoutParams.Y = clampedY;
+                _windowManager.UpdateViewLayout(_overlayView, _layoutParams);
+            }
+            return;
+        }
+
         int sizePx = (int)(_settings.WheelSizeDp * _density);
         int extraLeftPx = GetExpectedExtraLeftPx();
         int extraRightPx = GetExpectedExtraRightPx();
@@ -606,6 +621,8 @@ public class WheelOverlayService : AccessibilityService
         _overlayView.WheelMotionDetected += OnWheelMotionDetected;
         _overlayView.ScrollRequested += OnWheelScrollRequested;
         _overlayView.ScrollStopped += OnWheelScrollStopped;
+        _overlayView.CollapseCompleted += OnWheelCollapseCompleted;
+        _overlayView.ExpandStarted += OnWheelExpandStarted;
 
         int sizePx = (int)(_settings.WheelSizeDp * _density);
         _appliedExtraLeftPx = GetExpectedExtraLeftPx();
@@ -684,6 +701,8 @@ public class WheelOverlayService : AccessibilityService
                 _overlayView.WheelMotionDetected -= OnWheelMotionDetected;
                 _overlayView.ScrollRequested -= OnWheelScrollRequested;
                 _overlayView.ScrollStopped -= OnWheelScrollStopped;
+                _overlayView.CollapseCompleted -= OnWheelCollapseCompleted;
+                _overlayView.ExpandStarted -= OnWheelExpandStarted;
                 _windowManager.RemoveView(_overlayView);
             }
             catch (Exception ex)
@@ -707,6 +726,26 @@ public class WheelOverlayService : AccessibilityService
 
         int newX = _layoutParams.X + deltaX;
         int newY = _layoutParams.Y + deltaY;
+        int tabHeightPx = (int)(24f * _density);
+
+        if (_overlayView.IsCollapsed)
+        {
+            // 折りたたみ時は画面内に収まるようにクランプ
+            newX = Math.Clamp(newX, 0, Math.Max(0, _screenWidth - _layoutParams.Width));
+            newY = Math.Clamp(newY, 0, Math.Max(0, _screenHeight - _layoutParams.Height));
+
+            _layoutParams.X = newX;
+            _layoutParams.Y = newY;
+            _windowManager.UpdateViewLayout(_overlayView, _layoutParams);
+
+            // 展開時の復元位置も、移動後の中心アンカーから逆算して保持
+            int wheelSizePx = (int)(_settings.WheelSizeDp * _density);
+            float anchorCenterX = newX + (_layoutParams.Width / 2f);
+            float anchorCenterY = newY + (_layoutParams.Height / 2f);
+            _settings.WheelPosX = (int)Math.Round(anchorCenterX - _appliedExtraLeftPx - (wheelSizePx / 2f));
+            _settings.WheelPosY = (int)Math.Round(anchorCenterY - tabHeightPx - (wheelSizePx / 2f));
+            return;
+        }
 
         // Keep horizontal bounds within screen edges
         int minX = -(int)(_layoutParams.Width * 0.7f);
@@ -714,7 +753,6 @@ public class WheelOverlayService : AccessibilityService
         newX = Math.Clamp(newX, minX, maxX);
 
         // Vertical bounds: can hide down leaving only the top tab (drawer behavior)
-        int tabHeightPx = (int)(24f * _density);
         int minY = 0;
         int maxY = _screenHeight - tabHeightPx - (int)(10f * _density);
         newY = Math.Clamp(newY, minY, maxY);
@@ -726,6 +764,78 @@ public class WheelOverlayService : AccessibilityService
 
         _settings.WheelPosX = newX;
         _settings.WheelPosY = newY;
+    }
+
+    private void OnWheelCollapseCompleted()
+    {
+        if (_layoutParams == null || _windowManager == null || _overlayView == null || _settings == null) return;
+
+        UpdateDisplayMetrics();
+        int currentWheelSizePx = (int)(_settings.WheelSizeDp * _density);
+        int tabHeightPx = (int)(24f * _density);
+
+        // 中心アンカー（スクリーン絶対座標）
+        float anchorCenterX = _layoutParams.X + _appliedExtraLeftPx + (currentWheelSizePx / 2f);
+        float anchorCenterY = _layoutParams.Y + tabHeightPx + (currentWheelSizePx / 2f);
+
+        int collapsedSizePx = _overlayView.GetCollapsedWindowSizePx();
+
+        int newX = (int)Math.Round(anchorCenterX - (collapsedSizePx / 2f));
+        int newY = (int)Math.Round(anchorCenterY - (collapsedSizePx / 2f));
+
+        // 画面内に安全に収める
+        newX = Math.Clamp(newX, 0, Math.Max(0, _screenWidth - collapsedSizePx));
+        newY = Math.Clamp(newY, 0, Math.Max(0, _screenHeight - collapsedSizePx));
+
+        _layoutParams.Width = collapsedSizePx;
+        _layoutParams.Height = collapsedSizePx;
+        _layoutParams.X = newX;
+        _layoutParams.Y = newY;
+
+        _windowManager.UpdateViewLayout(_overlayView, _layoutParams);
+        _overlayView.OnCollapsedLayoutApplied(collapsedSizePx);
+    }
+
+    private void OnWheelExpandStarted()
+    {
+        if (_layoutParams == null || _windowManager == null || _overlayView == null || _settings == null) return;
+
+        UpdateDisplayMetrics();
+        int wheelSizePx = (int)(_settings.WheelSizeDp * _density);
+        int expectedExtraLeftPx = GetExpectedExtraLeftPx();
+        int expectedExtraRightPx = GetExpectedExtraRightPx();
+        int totalWidthPx = wheelSizePx + expectedExtraLeftPx + expectedExtraRightPx;
+        int tabHeightPx = (int)(24f * _density);
+        int totalHeightPx = wheelSizePx + tabHeightPx;
+
+        // 現在の折りたたみウィンドウの中心座標（スクリーン座標）
+        float anchorCenterX = _layoutParams.X + (_layoutParams.Width / 2f);
+        float anchorCenterY = _layoutParams.Y + (_layoutParams.Height / 2f);
+
+        int newX = (int)Math.Round(anchorCenterX - expectedExtraLeftPx - (wheelSizePx / 2f));
+        int newY = (int)Math.Round(anchorCenterY - tabHeightPx - (wheelSizePx / 2f));
+
+        // 画面内に安全に収める
+        int minX = -(int)(totalWidthPx * 0.7f);
+        int maxX = _screenWidth - (int)(totalWidthPx * 0.3f);
+        newX = Math.Clamp(newX, minX, maxX);
+
+        int minY = 0;
+        int maxY = _screenHeight - tabHeightPx - (int)(10f * _density);
+        newY = Math.Clamp(newY, minY, maxY);
+
+        _appliedExtraLeftPx = expectedExtraLeftPx;
+        _appliedExtraRightPx = expectedExtraRightPx;
+        _layoutParams.Width = totalWidthPx;
+        _layoutParams.Height = totalHeightPx;
+        _layoutParams.X = newX;
+        _layoutParams.Y = newY;
+
+        _settings.WheelPosX = newX;
+        _settings.WheelPosY = newY;
+
+        _windowManager.UpdateViewLayout(_overlayView, _layoutParams);
+        _overlayView.OnExpandedLayoutApplied();
     }
 
     private void OnWheelBackRequested()
@@ -834,6 +944,11 @@ public class WheelOverlayService : AccessibilityService
     {
         if (_settings == null || _layoutParams == null || _windowManager == null || _overlayView == null) return;
 
+        if (_overlayView.IsCollapsed)
+        {
+            _overlayView.Expand(animate: false);
+        }
+
         CancelPullInAnimation();
         UpdateDisplayMetrics();
 
@@ -887,8 +1002,22 @@ public class WheelOverlayService : AccessibilityService
 
     private void OnSettingsChanged()
     {
+        if (_settings != null && _overlayView != null)
+        {
+            if (!_settings.LongPressCollapseEnabled && _overlayView.IsCollapsed)
+            {
+                _overlayView.Expand(animate: true);
+            }
+        }
+
         if (_settings != null && _layoutParams != null)
         {
+            if (_overlayView?.IsCollapsed == true)
+            {
+                _overlayView.ApplySettings();
+                return;
+            }
+
             UpdateDisplayMetrics();
             int expectedWheelSizePx = (int)(_settings.WheelSizeDp * _density);
             int expectedExtraLeftPx = GetExpectedExtraLeftPx();

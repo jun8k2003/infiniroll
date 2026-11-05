@@ -24,6 +24,7 @@ public class AppSettings
     private const string KeyShowBackButton = "pref_show_back_button";
     private const string KeyShowSettingsButton = "pref_show_settings_button";
     private const string KeyShowCenterDot = "pref_show_center_dot";
+    private const string KeyLongPressCollapse = "pref_long_press_collapse";
     private const string KeyWheelSize = "pref_wheel_size";
     private const string KeyWheelPosX = "pref_wheel_pos_x";
     private const string KeyWheelPosY = "pref_wheel_pos_y";
@@ -159,6 +160,17 @@ public class AppSettings
         {
             using var editor = _prefs.Edit();
             editor?.PutBoolean(KeyShowCenterDot, value)?.Apply();
+            NotifyChanged();
+        }
+    }
+
+    public bool LongPressCollapseEnabled
+    {
+        get => _prefs.GetBoolean(KeyLongPressCollapse, true);
+        set
+        {
+            using var editor = _prefs.Edit();
+            editor?.PutBoolean(KeyLongPressCollapse, value)?.Apply();
             NotifyChanged();
         }
     }

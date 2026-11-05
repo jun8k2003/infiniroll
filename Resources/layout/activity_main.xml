@@ -290,6 +290,17 @@
                 android:text="@string/pref_show_center_dot"
                 android:textColor="@color/text_primary"
                 android:textSize="15sp" />
+
+            <!-- Long Press Collapse Switch -->
+            <Switch
+                android:id="@+id/switch_long_press_collapse"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:checked="true"
+                android:text="@string/pref_long_press_collapse"
+                android:textColor="@color/text_primary"
+                android:textSize="15sp" />
         </LinearLayout>
 
         <!-- Reset Buttons -->

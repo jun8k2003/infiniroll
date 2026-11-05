@@ -4,6 +4,7 @@ using Android.Content;
 using Android.Graphics;
 using Android.OS;
 using Android.Views;
+using Android.Views.Animations;
 
 namespace Infiniroll;
 
@@ -83,6 +84,22 @@ public class WheelOverlayView : View
     private bool _isPressedUp;
     private bool _isPressedDown;
 
+    // Collapse / Expand (Compact Mode)
+    private const long LongPressDurationMs = 1000;
+    private readonly Handler _longPressHandler;
+    private readonly Action _longPressAction;
+    private float _touchSlopPx;
+    private float _downRawX;
+    private float _downRawY;
+    private bool _longPressTriggered;
+    private bool _isCollapsed;
+    private float _savedNormalInnerRadius;
+    private float _expandProgress = 1.0f;
+    private float _innerBounceScale = 1.0f;
+    private ValueAnimator? _collapseAnimator;
+
+    public bool IsCollapsed => _isCollapsed;
+
     // Animation & Timers
     private readonly Handler _fadeHandler;
     private readonly Action _fadeOutRunnable;
@@ -102,11 +119,18 @@ public class WheelOverlayView : View
     public event Action? WheelMotionDetected;
     public event Action<ScrollDirection, int>? ScrollRequested;
     public event Action? ScrollStopped;
+    public event Action? CollapseStarted;
+    public event Action? CollapseCompleted;
+    public event Action? ExpandStarted;
+    public event Action? ExpandCompleted;
 
     public WheelOverlayView(Context context, AppSettings settings) : base(context)
     {
         _settings = settings;
         _density = context.Resources?.DisplayMetrics?.Density ?? 1.0f;
+        _touchSlopPx = ViewConfiguration.Get(context)?.ScaledTouchSlop ?? (10f * _density);
+        _longPressHandler = new Handler(Looper.MainLooper!);
+        _longPressAction = OnLongPressTriggered;
         _fadeHandler = new Handler(Looper.MainLooper!);
         _fadeOutRunnable = StartFadeOut;
         _buttonRepeatHandler = new Handler(Looper.MainLooper!);
@@ -238,8 +262,46 @@ public class WheelOverlayView : View
         return _settings.ShowSettingsButtonEnabled ? (int)MathF.Ceiling(SideButtonExtraDp * _density) : 0;
     }
 
+    public int GetCollapsedWindowSizePx()
+    {
+        float innerR = _savedNormalInnerRadius > 0 ? _savedNormalInnerRadius : _innerRadius;
+        if (innerR <= 0)
+        {
+            int wheelDiameter = (int)(_settings.WheelSizeDp * _density);
+            innerR = Math.Max(1f, ((wheelDiameter - (4f * _density)) / 2f) * 0.45f);
+        }
+        float padding = 8f * _density;
+        return (int)MathF.Ceiling((innerR + padding) * 2f);
+    }
+
+    public void OnCollapsedLayoutApplied(int sizePx)
+    {
+        RecalculateGeometry(sizePx);
+        Invalidate();
+    }
+
+    public void OnExpandedLayoutApplied()
+    {
+        if (Width > 0)
+        {
+            RecalculateGeometry(Width);
+        }
+        Invalidate();
+    }
+
     private void RecalculateGeometry(int totalWidth)
     {
+        if (_isCollapsed)
+        {
+            _centerX = totalWidth / 2f;
+            _centerY = totalWidth / 2f;
+            if (_savedNormalInnerRadius > 0)
+            {
+                _innerRadius = _savedNormalInnerRadius;
+            }
+            return;
+        }
+
         int extraLeftPx = GetExtraLeftPx();
         int extraRightPx = GetExtraRightPx();
         int wheelDiameter = Math.Max(1, totalWidth - extraLeftPx - extraRightPx);
@@ -249,6 +311,7 @@ public class WheelOverlayView : View
 
         _outerRadius = (wheelDiameter - (4f * _density)) / 2f;
         _innerRadius = _outerRadius * 0.45f;
+        _savedNormalInnerRadius = _innerRadius;
         _centerX = extraLeftPx + (wheelDiameter / 2f);
         _centerY = _tabHeight + (wheelDiameter / 2f);
 
@@ -269,6 +332,13 @@ public class WheelOverlayView : View
     protected override void OnMeasure(int widthMeasureSpec, int heightMeasureSpec)
     {
         int totalWidth = MeasureSpec.GetSize(widthMeasureSpec);
+
+        if (_isCollapsed)
+        {
+            SetMeasuredDimension(totalWidth, totalWidth);
+            return;
+        }
+
         int extraLeftPx = GetExtraLeftPx();
         int extraRightPx = GetExtraRightPx();
         int wheelDiameter = Math.Max(1, totalWidth - extraLeftPx - extraRightPx);
@@ -296,19 +366,65 @@ public class WheelOverlayView : View
         int alpha255 = Math.Clamp((int)Math.Round(_fadeProgress * 255f), 0, 255);
         int layerId = canvas.SaveLayerAlpha(0f, 0f, Width, Height, alpha255);
 
-        // 0. Draw optional 10 o'clock Back button ("◀") outside the outer circle
-        if (_settings.ShowBackButtonEnabled)
+        // 外側のパーツ群（外周ダイアル、目盛り/矢印ボタン、サイズ変更タブ、戻る/設定ボタン）
+        // _expandProgress > 0 のときのみ描画し、かわいい拡大縮小・フェードアウトを行う（領域節約・折りたたみ対応）
+        if (_expandProgress > 0.001f)
         {
-            DrawBackButton(canvas);
+            int outerAlpha = Math.Clamp((int)Math.Round(_expandProgress * 255f), 0, 255);
+            int outerLayerId = canvas.SaveLayerAlpha(0f, 0f, Width, Height, outerAlpha);
+
+            canvas.Save();
+            canvas.Scale(_expandProgress, _expandProgress, _centerX, _centerY);
+
+            // 0. Draw optional 10 o'clock Back button ("◀")
+            if (_settings.ShowBackButtonEnabled)
+            {
+                DrawBackButton(canvas);
+            }
+
+            // 0b. Draw optional 2 o'clock Settings button ("≡")
+            if (_settings.ShowSettingsButtonEnabled)
+            {
+                DrawSettingsButton(canvas);
+            }
+
+            // 1. Draw top resize tab
+            DrawResizeTab(canvas);
+
+            // 2. Draw outer dial circle / buttons
+            if (_settings.ScrollMode == ScrollModeType.LogicalButtons)
+            {
+                DrawLogicalButtonsOuter(canvas);
+            }
+            else
+            {
+                canvas.DrawCircle(_centerX, _centerY, _outerRadius, _outerDialPaint);
+                canvas.DrawCircle(_centerX, _centerY, _outerRadius, _strokePaint);
+                DrawDialMarkers(canvas);
+            }
+
+            canvas.Restore();
+            canvas.RestoreToCount(outerLayerId);
         }
 
-        // 0b. Draw optional 2 o'clock Settings button ("≡") outside the outer circle
-        if (_settings.ShowSettingsButtonEnabled)
-        {
-            DrawSettingsButton(canvas);
-        }
+        // 内側の円（CenterButton）: 常に描画され、弾むアニメーション (_innerBounceScale) が適用される
+        canvas.Save();
+        canvas.Scale(_innerBounceScale, _innerBounceScale, _centerX, _centerY);
+        _innerButtonPaint.Color = _isPressedCenter ? Color.Rgb(80, 85, 100) : Color.Rgb(58, 60, 68);
+        canvas.DrawCircle(_centerX, _centerY, _innerRadius, _innerButtonPaint);
+        canvas.DrawCircle(_centerX, _centerY, _innerRadius, _strokePaint);
+        canvas.Restore();
 
-        // 1. Draw top resize tab (folder index tab style)
+        // ホイール本体のレイヤーを復元
+        canvas.RestoreToCount(layerId);
+
+        // 5. Draw laser pointer red dot in center if enabled
+        // レイヤー復元後に描画するため、アプリ本体が半透明になっても赤ドットだけは100%不透明（鮮烈発光）を維持
+        DrawCenterDot(canvas);
+    }
+
+    private void DrawResizeTab(Canvas canvas)
+    {
         float tabLeft = _centerX - (_tabWidth / 2f);
         float tabRight = _centerX + (_tabWidth / 2f);
         float tabTop = 2f * _density;
@@ -326,32 +442,6 @@ public class WheelOverlayView : View
         canvas.DrawLine(_centerX - gripWidth / 2f, gripY, _centerX + gripWidth / 2f, gripY, _tabHandlePaint);
         canvas.DrawLine(_centerX - (gripWidth * 0.6f) / 2f, gripY - 3f * _density, _centerX + (gripWidth * 0.6f) / 2f, gripY - 3f * _density, _tabHandlePaint);
         canvas.DrawLine(_centerX - (gripWidth * 0.6f) / 2f, gripY + 3f * _density, _centerX + (gripWidth * 0.6f) / 2f, gripY + 3f * _density, _tabHandlePaint);
-
-        // 2. Draw outer dial circle / buttons
-        if (_settings.ScrollMode == ScrollModeType.LogicalButtons)
-        {
-            DrawLogicalButtons(canvas);
-        }
-        else
-        {
-            canvas.DrawCircle(_centerX, _centerY, _outerRadius, _outerDialPaint);
-            canvas.DrawCircle(_centerX, _centerY, _outerRadius, _strokePaint);
-
-            // 3. Draw subtle tick marks / scroll hints around the dial
-            DrawDialMarkers(canvas);
-
-            // 4. Draw center button
-            _innerButtonPaint.Color = _isPressedCenter ? Color.Rgb(80, 85, 100) : Color.Rgb(58, 60, 68);
-            canvas.DrawCircle(_centerX, _centerY, _innerRadius, _innerButtonPaint);
-            canvas.DrawCircle(_centerX, _centerY, _innerRadius, _strokePaint);
-        }
-
-        // ホイール本体のレイヤーを復元
-        canvas.RestoreToCount(layerId);
-
-        // 5. Draw laser pointer red dot in center if enabled
-        // レイヤー復元後に描画するため、アプリ本体が半透明になっても赤ドットだけは100%不透明（鮮烈発光）を維持
-        DrawCenterDot(canvas);
     }
 
     private void DrawCenterDot(Canvas canvas)
@@ -370,7 +460,7 @@ public class WheelOverlayView : View
         canvas.DrawCircle(_centerX, _centerY, coreRadius, _laserDotCorePaint);
     }
 
-    private void DrawLogicalButtons(Canvas canvas)
+    private void DrawLogicalButtonsOuter(Canvas canvas)
     {
         _upArcRect.Set(_centerX - _outerRadius, _centerY - _outerRadius, _centerX + _outerRadius, _centerY + _outerRadius);
 
@@ -410,11 +500,6 @@ public class WheelOverlayView : View
         _arrowPath.LineTo(_centerX + arrowHalfWidth, downCenterY - (arrowHeight * 0.45f));
         _arrowPath.Close();
         canvas.DrawPath(_arrowPath, _backIconPaint);
-
-        // 7. 中央移動ボタン
-        _innerButtonPaint.Color = _isPressedCenter ? Color.Rgb(80, 85, 100) : Color.Rgb(58, 60, 68);
-        canvas.DrawCircle(_centerX, _centerY, _innerRadius, _innerButtonPaint);
-        canvas.DrawCircle(_centerX, _centerY, _innerRadius, _strokePaint);
     }
 
     private void DrawBackButton(Canvas canvas)
@@ -495,6 +580,9 @@ public class WheelOverlayView : View
             case MotionEventActions.Down:
                 _lastTouchRawX = rawX;
                 _lastTouchRawY = rawY;
+                _downRawX = rawX;
+                _downRawY = rawY;
+                _longPressTriggered = false;
                 _accumulatedAngle = 0;
 
                 _activeZone = DetectTouchZone(localX, localY);
@@ -509,6 +597,10 @@ public class WheelOverlayView : View
                 if (_activeZone == TouchZone.CenterButton)
                 {
                     _isPressedCenter = true;
+                    if (_settings.LongPressCollapseEnabled)
+                    {
+                        StartLongPressTimer();
+                    }
                     Invalidate();
                 }
                 else if (_activeZone == TouchZone.ResizeTab)
@@ -558,8 +650,18 @@ public class WheelOverlayView : View
 
                 if (_activeZone == TouchZone.CenterButton)
                 {
-                    // Center drag moves position
-                    MoveRequested?.Invoke((int)deltaRawX, (int)deltaRawY);
+                    float diffX = rawX - _downRawX;
+                    float diffY = rawY - _downRawY;
+                    if (MathF.Sqrt((diffX * diffX) + (diffY * diffY)) > _touchSlopPx)
+                    {
+                        CancelLongPress();
+                    }
+
+                    // 長押しトリガー直後は微小ブレでの移動を抑止
+                    if (!_longPressTriggered)
+                    {
+                        MoveRequested?.Invoke((int)deltaRawX, (int)deltaRawY);
+                    }
                     _lastTouchRawX = rawX;
                     _lastTouchRawY = rawY;
                 }
@@ -664,6 +766,7 @@ public class WheelOverlayView : View
                 return true;
 
             case MotionEventActions.Up:
+                CancelLongPress();
                 CancelButtonRepeat();
                 if (_activeZone == TouchZone.DialTrack)
                 {
@@ -687,11 +790,13 @@ public class WheelOverlayView : View
                 _isPressedDown = false;
                 _activeZone = TouchZone.None;
                 _activeRepeatZone = TouchZone.None;
+                _longPressTriggered = false;
                 Invalidate();
                 ScheduleFadeOut();
                 return true;
 
             case MotionEventActions.Cancel:
+                CancelLongPress();
                 CancelButtonRepeat();
                 if (_activeZone == TouchZone.DialTrack)
                 {
@@ -705,6 +810,7 @@ public class WheelOverlayView : View
                 _isPressedDown = false;
                 _activeZone = TouchZone.None;
                 _activeRepeatZone = TouchZone.None;
+                _longPressTriggered = false;
                 Invalidate();
                 ScheduleFadeOut();
                 return true;
@@ -718,6 +824,12 @@ public class WheelOverlayView : View
         float dx = x - _centerX;
         float dy = y - _centerY;
         float dist = MathF.Sqrt((dx * dx) + (dy * dy));
+
+        if (_isCollapsed)
+        {
+            // 折りたたみ時は内側円のみ判定（操作しやすいよう余白含む）
+            return dist <= (_innerRadius + (8f * _density)) ? TouchZone.CenterButton : TouchZone.None;
+        }
 
         // 0a. Check 10 o'clock Back button zone (when enabled and outside outer dial rim)
         if (_settings.ShowBackButtonEnabled && dist > _outerRadius + (2f * _density))
@@ -774,6 +886,194 @@ public class WheelOverlayView : View
         float dy = y - _centerY;
         // In degrees: -180 to +180
         return Math.Atan2(dy, dx) * 180.0 / Math.PI;
+    }
+
+    private void StartLongPressTimer()
+    {
+        CancelLongPress();
+        _longPressTriggered = false;
+        _longPressHandler.PostDelayed(_longPressAction, LongPressDurationMs);
+    }
+
+    public override void CancelLongPress()
+    {
+        base.CancelLongPress();
+        _longPressHandler.RemoveCallbacks(_longPressAction);
+    }
+
+    private void OnLongPressTriggered()
+    {
+        if (_activeZone != TouchZone.CenterButton) return;
+        if (!_settings.LongPressCollapseEnabled) return;
+
+        _longPressTriggered = true;
+        PlayLongPressHaptic();
+
+        if (_isCollapsed)
+        {
+            Expand(animate: true);
+        }
+        else
+        {
+            Collapse(animate: true);
+        }
+    }
+
+    private void PlayLongPressHaptic()
+    {
+        if (!_settings.HapticFeedbackEnabled) return;
+
+        try
+        {
+            if (OperatingSystem.IsAndroidVersionAtLeast(29))
+            {
+                _vibrator?.Vibrate(VibrationEffect.CreatePredefined(VibrationEffect.EffectHeavyClick));
+            }
+            else
+            {
+#pragma warning disable CA1422
+                _vibrator?.Vibrate(35);
+#pragma warning restore CA1422
+            }
+        }
+        catch
+        {
+            PerformHapticFeedback(FeedbackConstants.LongPress);
+        }
+    }
+
+    public void Collapse(bool animate = true)
+    {
+        if (_isCollapsed) return;
+        _isCollapsed = true;
+        _collapseAnimator?.Cancel();
+
+        CollapseStarted?.Invoke();
+
+        if (!animate)
+        {
+            _expandProgress = 0.0f;
+            _innerBounceScale = 1.0f;
+            Invalidate();
+            CollapseCompleted?.Invoke();
+            return;
+        }
+
+        // かわいい縮小アニメーション（きゅっ…ぷるんっ♪と弾みながら外側が消える）
+        var anim = ValueAnimator.OfFloat(1.0f, 0.0f);
+        if (anim != null)
+        {
+            anim.SetDuration(300);
+            anim.SetInterpolator(new AccelerateDecelerateInterpolator());
+            anim.Update += (s, e) =>
+            {
+                if (e.Animation?.AnimatedValue is Java.Lang.Number num)
+                {
+                    float val = num.FloatValue();
+                    _expandProgress = val;
+                    float t = 1.0f - val; // 0 -> 1
+
+                    // 内側円のバウンス: 最初キュッと縮んで (0.88), ポンッと弾んで (1.08), 1.0 に戻る
+                    if (t < 0.4f)
+                    {
+                        float p = t / 0.4f;
+                        _innerBounceScale = 1.0f - (0.12f * p);
+                    }
+                    else if (t < 0.75f)
+                    {
+                        float p = (t - 0.4f) / 0.35f;
+                        _innerBounceScale = 0.88f + (0.20f * p);
+                    }
+                    else
+                    {
+                        float p = (t - 0.75f) / 0.25f;
+                        _innerBounceScale = 1.08f - (0.08f * p);
+                    }
+
+                    Invalidate();
+                }
+            };
+            anim.AnimationEnd += (s, e) =>
+            {
+                _expandProgress = 0.0f;
+                _innerBounceScale = 1.0f;
+                Invalidate();
+                CollapseCompleted?.Invoke();
+            };
+            _collapseAnimator = anim;
+            anim.Start();
+        }
+        else
+        {
+            _expandProgress = 0.0f;
+            _innerBounceScale = 1.0f;
+            Invalidate();
+            CollapseCompleted?.Invoke();
+        }
+    }
+
+    public void Expand(bool animate = true)
+    {
+        if (!_isCollapsed) return;
+        _isCollapsed = false;
+        _collapseAnimator?.Cancel();
+
+        ExpandStarted?.Invoke();
+
+        if (!animate)
+        {
+            _expandProgress = 1.0f;
+            _innerBounceScale = 1.0f;
+            Invalidate();
+            ExpandCompleted?.Invoke();
+            return;
+        }
+
+        // かわいい拡大アニメーション（ポンッ！と飛び出し、ぷるんと弾む）
+        var anim = ValueAnimator.OfFloat(0.0f, 1.0f);
+        if (anim != null)
+        {
+            anim.SetDuration(380);
+            anim.SetInterpolator(new OvershootInterpolator(1.8f));
+            anim.Update += (s, e) =>
+            {
+                if (e.Animation?.AnimatedValue is Java.Lang.Number num)
+                {
+                    float val = num.FloatValue();
+                    _expandProgress = val;
+
+                    // 内側円も外側の飛び出しに合わせてポンッと膨らんでから戻る
+                    float t = Math.Clamp(val, 0f, 1.2f);
+                    if (t < 0.5f)
+                    {
+                        _innerBounceScale = 1.0f + (0.16f * (t / 0.5f));
+                    }
+                    else
+                    {
+                        float p = Math.Clamp((t - 0.5f) / 0.5f, 0f, 1f);
+                        _innerBounceScale = 1.16f - (0.16f * p);
+                    }
+
+                    Invalidate();
+                }
+            };
+            anim.AnimationEnd += (s, e) =>
+            {
+                _expandProgress = 1.0f;
+                _innerBounceScale = 1.0f;
+                Invalidate();
+                ExpandCompleted?.Invoke();
+            };
+            _collapseAnimator = anim;
+            anim.Start();
+        }
+        else
+        {
+            _expandProgress = 1.0f;
+            _innerBounceScale = 1.0f;
+            Invalidate();
+            ExpandCompleted?.Invoke();
+        }
     }
 
     private void PlayHapticTick()
@@ -937,6 +1237,8 @@ public class WheelOverlayView : View
 
     protected override void OnDetachedFromWindow()
     {
+        CancelLongPress();
+        _collapseAnimator?.Cancel();
         CancelButtonRepeat();
         CancelFadeOut();
         _fadeAnimator?.Cancel();

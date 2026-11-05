@@ -15,6 +15,7 @@
     <string name="pref_show_back_button">戻るボタン「◀」を表示（外側10時方向）</string>
     <string name="pref_show_settings_button">アプリ起動ボタン「≡」を表示（外側2時方向）</string>
     <string name="pref_show_center_dot">センター赤ドットを表示（レーザーポインター風）</string>
+    <string name="pref_long_press_collapse">内側の円長押しで折りたたみ（領域節約）</string>
     <string name="radio_scroll_buttons">ボタン方式（論理スクロール）\n▲▼ボタンを押してスクロール・長押し連続移動</string>
     <string name="btn_reset_position">位置とサイズをリセット</string>
     <string name="reset_success_msg">ホイールの位置とサイズをリセットしました</string>
@@ -25,5 +26,5 @@
     <string name="dialog_cancel">キャンセル</string>
     <string name="dialog_reset">リセット</string>
     <string name="usage_guide_title">使い方</string>
-    <string name="usage_guide_text">1. 「ユーザー補助設定を開く」から Infiniroll をONにしてください。\n2. 画面上にホイールが表示されます。\n3. 外周リングを回すと論理スクロールが行われます。\n4. 中心円をドラッグすると位置を移動できます。\n5. 上部のつまみタブをドラッグするとサイズを変更できます。\n6. 下端へ押し下げて画面外に隠すことも可能です。</string>
+    <string name="usage_guide_text">1. 「ユーザー補助設定を開く」から Infiniroll をONにしてください。\n2. 画面上にホイールが表示されます。\n3. 外周リングを回すと論理スクロールが行われます。\n4. 中心円をドラッグすると位置を移動できます。\n5. 上部のつまみタブをドラッグするとサイズを変更できます。\n6. 下端へ押し下げて画面外に隠すことも可能です。\n7. 内側の円を1秒長押しすると外周やタブが折りたたまれて最小化（領域節約）します。復元も1秒長押しです。</string>
 </resources>
